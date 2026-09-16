@@ -17,7 +17,7 @@ trades.
 AutoTrade/
 ├── index.html              Home / landing page
 ├── features.html           Features
-├── pricing.html             Pricing (Core / Pro / Elite)
+├── pricing.html             Pricing (Essential / Pro / Unlimited)
 ├── how-it-works.html        How it works + architecture diagram
 ├── download.html            Windows app download + install steps
 ├── faq.html                  FAQ
@@ -94,13 +94,14 @@ for all of these:
 
 | Placeholder | What it is | Where it's used |
 |---|---|---|
-| `STRIPE_CORE_URL` | Stripe Checkout/Payment Link URL for the Core plan | "Get Core" button |
-| `STRIPE_PRO_URL` | Stripe Checkout/Payment Link URL for the Pro plan | "Get Pro" button |
-| `STRIPE_ELITE_URL` | Stripe Checkout/Payment Link URL for the Elite plan | "Get Elite" button |
 | `WINDOWS_DOWNLOAD_URL` | Direct URL to the AutoTrade `.exe` installer | "Download for Windows" button on the Download page |
 | `appVersion` | Current app version string (e.g. `"1.0.0"`) | Download page |
 | `appPlatforms` | Supported OS string (e.g. `"Windows 10 / Windows 11"`) | Download page |
 | `social.twitter` / `social.discord` / `social.github` | Social links | Footer icons |
+
+The three Stripe payment links are already filled in with real AutoTrade
+Payment Links (see below) — there's nothing left to replace there unless
+those links change.
 
 Also review these placeholder/draft sections directly in the HTML (clearly
 marked with a dashed "Placeholder notice" box):
@@ -108,19 +109,40 @@ marked with a dashed "Placeholder notice" box):
 - `faq.html` — supported broker list, cancellation flow details, "does AutoTrade need my computer running" answer, support contact
 - `terms.html`, `privacy.html` — legal entity name, business address, contact details, final cancellation/refund policy, data retention specifics (these are **draft/legal-placeholder language** — have a qualified attorney review before publishing as final)
 
-### Where to paste your Stripe payment links
+### Stripe payment links
 
-Open `js/config.js` and replace the three string values at the top:
+Each plan in `js/config.js` carries its own Stripe link(s):
 
 ```js
-stripeCoreUrl: "STRIPE_CORE_URL",   // → e.g. "https://buy.stripe.com/xxxxx"
-stripeProUrl: "STRIPE_PRO_URL",     // → e.g. "https://buy.stripe.com/yyyyy"
-stripeEliteUrl: "STRIPE_ELITE_URL", // → e.g. "https://buy.stripe.com/zzzzz"
+{
+  id: "essential",
+  name: "AutoTrade Essential",
+  stripeUrl: "https://buy.stripe.com/cNi8wQ5t0aUZ8B3dClfYY04",
+  stripeLaunchUrl: null, // Essential has no launch price
+  ...
+},
+{
+  id: "pro",
+  name: "AutoTrade Pro",
+  stripeUrl: "https://buy.stripe.com/14A8wQdZw7INeZr0PzfYY03",       // normal $25/mo
+  stripeLaunchUrl: "https://buy.stripe.com/6oU6oI6x42otg3v69TfYY02", // launch $20/mo
+  ...
+},
+{
+  id: "unlimited",
+  name: "AutoTrade Unlimited",
+  stripeUrl: "https://buy.stripe.com/00w7sMg7Ed379F7aq9fYY01",       // normal $50/mo
+  stripeLaunchUrl: "https://buy.stripe.com/9B65kEdZw9QVbNfbudfYY00", // launch $40/mo
+  ...
+},
 ```
 
-The pricing cards on both `index.html` and `pricing.html` are rendered from
-this same config, so you only need to update it once. Never put a Stripe
-**secret key** here — only the public Checkout/Payment Link URL.
+The `getPlanStripeUrl()` helper (bottom of `config.js`) automatically picks
+`stripeLaunchUrl` when `launchPromoEnabled` is `true` and the plan has one,
+and falls back to `stripeUrl` otherwise. The pricing cards on both
+`index.html` and `pricing.html` render from this same config, so a link
+only ever needs to change in one place. Never put a Stripe **secret key**
+here — only the public Payment Link URL.
 
 ### Where to paste the Windows `.exe` download link
 
@@ -133,21 +155,23 @@ windowsDownloadUrl: "WINDOWS_DOWNLOAD_URL", // → e.g. "https://cdn.example.com
 This automatically updates the "Download for Windows" button on
 `download.html`.
 
-### Turning on the launch promotion
+### Turning the launch promotion on/off
 
-In `js/config.js`:
+In `js/config.js`, one flag controls everything:
 
 ```js
-launchPromoEnabled: false, // set to true to activate
+launchPromoEnabled: true, // set to false to turn off the promotion
 ```
 
 When `true`:
-- Pro shows $25 crossed out → $20/mo, with a "Launch Offer" badge
-- Elite shows $50 crossed out → $40/mo, with a "Launch Offer" badge
+- AutoTrade Pro shows $25 crossed out → $20/mo, with a "Launch Offer" badge, and its button uses the Pro **launch** Stripe link
+- AutoTrade Unlimited shows $50 crossed out → $40/mo, with a "Launch Offer" badge, and its button uses the Unlimited **launch** Stripe link
 - A banner appears above the pricing cards
+- AutoTrade Essential is unaffected — it has no launch price and always uses its one Stripe link
 
-When `false`, standard pricing is shown with no promo messaging. No other
-code changes are needed to toggle this.
+When `false`, standard pricing is shown with no promo messaging, and Pro /
+Unlimited buttons automatically switch to their normal-price Stripe links.
+No other code changes are needed to toggle this — it's a single boolean.
 
 ---
 

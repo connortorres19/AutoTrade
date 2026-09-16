@@ -7,12 +7,12 @@
  */
 
 const CONFIG = {
-  // --- Stripe payment links -------------------------------------------
-  // Replace each with the real Stripe Checkout / Payment Link URL for that
-  // plan. Until replaced, pricing buttons will not link anywhere useful.
-  stripeCoreUrl: "STRIPE_CORE_URL",
-  stripeProUrl: "STRIPE_PRO_URL",
-  stripeEliteUrl: "STRIPE_ELITE_URL",
+  // --- Launch promotion --------------------------------------------------
+  // Single source of truth for the launch discount. Flip this one flag to
+  // turn the promotion on or off — it controls both the displayed price
+  // AND which Stripe link each button uses (see `plans` below). Nothing
+  // else needs to change.
+  launchPromoEnabled: true,
 
   // --- Windows desktop app download ------------------------------------
   // Replace with the direct URL to the AutoTrade Windows installer (.exe).
@@ -22,24 +22,24 @@ const CONFIG = {
   appVersion: "1.0.0",
   appPlatforms: "Windows 10 / Windows 11",
 
-  // --- Launch promotion --------------------------------------------------
-  // Set to true to display launch pricing (crossed-out standard price +
-  // discounted launch price + "Launch Offer" badge) on the Pro and Elite
-  // plans. Set to false to show standard pricing only.
-  launchPromoEnabled: false,
-
   // --- Pricing plans -------------------------------------------------
-  // `price` is the standard monthly price. `launchPrice` is only shown
-  // when launchPromoEnabled is true.
+  // `price` is the standard monthly price, `launchPrice` is shown instead
+  // (with `price` crossed out) whenever `launchPromoEnabled` is true.
+  //
+  // Each plan carries its own Stripe link(s). When a plan has a
+  // `stripeLaunchUrl`, the pricing renderer automatically picks
+  // `stripeLaunchUrl` while the promo is enabled and `stripeUrl` once it's
+  // turned off — no per-button edits required anywhere else.
   plans: [
     {
-      id: "core",
-      name: "Core",
+      id: "essential",
+      name: "AutoTrade Essential",
       price: 15,
-      launchPrice: null,
+      launchPrice: null, // Essential has no launch pricing — always $15/mo.
       tagline: "For getting started with automated stock trading.",
-      cta: "Get Core",
-      stripeKey: "stripeCoreUrl",
+      cta: "Get Essential",
+      stripeUrl: "https://buy.stripe.com/cNi8wQ5t0aUZ8B3dClfYY04",
+      stripeLaunchUrl: null,
       featured: false,
       features: [
         "Up to $1,000 account balance",
@@ -51,12 +51,13 @@ const CONFIG = {
     },
     {
       id: "pro",
-      name: "Pro",
+      name: "AutoTrade Pro",
       price: 25,
       launchPrice: 20,
       tagline: "For active traders who want more control and more markets.",
       cta: "Get Pro",
-      stripeKey: "stripeProUrl",
+      stripeUrl: "https://buy.stripe.com/14A8wQdZw7INeZr0PzfYY03",
+      stripeLaunchUrl: "https://buy.stripe.com/6oU6oI6x42otg3v69TfYY02",
       featured: true,
       features: [
         "Up to $5,000 account balance",
@@ -68,13 +69,14 @@ const CONFIG = {
       ],
     },
     {
-      id: "elite",
-      name: "Elite",
+      id: "unlimited",
+      name: "AutoTrade Unlimited",
       price: 50,
       launchPrice: 40,
       tagline: "For serious traders who need scale and priority support.",
-      cta: "Get Elite",
-      stripeKey: "stripeEliteUrl",
+      cta: "Get Unlimited",
+      stripeUrl: "https://buy.stripe.com/00w7sMg7Ed379F7aq9fYY01",
+      stripeLaunchUrl: "https://buy.stripe.com/9B65kEdZw9QVbNfbudfYY00",
       featured: false,
       features: [
         "Unlimited account balance",
@@ -94,3 +96,15 @@ const CONFIG = {
     github: "#",
   },
 };
+
+/**
+ * Resolves the Stripe URL a plan's button should use right now, given the
+ * single `launchPromoEnabled` flag. Centralized here so every page (and
+ * any future page) always gets the same answer from one place.
+ */
+function getPlanStripeUrl(plan) {
+  if (CONFIG.launchPromoEnabled && plan.launchPrice != null && plan.stripeLaunchUrl) {
+    return plan.stripeLaunchUrl;
+  }
+  return plan.stripeUrl;
+}
