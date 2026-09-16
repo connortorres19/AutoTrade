@@ -732,6 +732,17 @@ section {
   transition: color var(--dur-fast) var(--ease-out);
 }
 
+/* The portfolio figure is a single unbreakable token (no spaces to wrap
+   at, unlike "Momentum Scalper"), so it needs its own smaller size plus
+   an ellipsis safety net rather than the shared card-value styling. */
+#dash-portfolio-value {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
 .dashboard-card-delta {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -956,6 +967,50 @@ section {
   stroke-width: 1.5;
   transition: opacity var(--dur-fast) var(--ease-out);
   pointer-events: none;
+}
+
+.chart-marker {
+  transition: opacity var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.chart-marker.is-buy { color: var(--color-success); }
+.chart-marker.is-sell { color: var(--color-danger); }
+
+.chart-marker-stem {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.55;
+}
+
+.chart-marker-arrow {
+  fill: currentColor;
+}
+
+.chart-marker.is-sell .chart-marker-arrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(180deg);
+}
+
+.chart-marker-label {
+  fill: currentColor;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.chart-marker.is-visible .chart-marker-inner {
+  animation: marker-pop 420ms var(--ease-out);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes marker-pop {
+  0% { transform: scale(0.3); }
+  65% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }
 
 .chart-tooltip {

@@ -230,6 +230,9 @@ function initDashboardDemo() {
   const chartFill = document.getElementById("dash-chart-fill");
   const chartDot = document.getElementById("dash-chart-dot");
   const chartTooltip = document.getElementById("dash-chart-tooltip");
+  const chartMarker = document.getElementById("dash-chart-marker");
+  const chartMarkerStem = document.getElementById("dash-chart-marker-stem");
+  const chartMarkerLabel = document.getElementById("dash-chart-marker-label");
   const watchlistItems = Array.from(document.querySelectorAll("#dash-watchlist .watchlist-item"));
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -284,7 +287,8 @@ function initDashboardDemo() {
 
   /* --- Portfolio value: mean-reverting drift, nudged at "settle" --- */
   const DAY_START_VALUE = 24242;
-  let portfolioValue = 24680;
+  const BASE_PORTFOLIO = 24680;
+  let portfolioValue = BASE_PORTFOLIO;
 
   function renderPortfolio() {
     if (!portfolioEl) return;
@@ -366,6 +370,51 @@ function initDashboardDemo() {
     chartSvg.addEventListener("mouseleave", hide);
   }
 
+  /* --- Trade marker: plant a BUY/SELL flag on the chart at the exact
+     point a trade fills, like a real trading platform's execution
+     marker — this is the actual "show it on the graph" moment. --- */
+  function showChartMarker(item, side) {
+    if (!chartMarker) return;
+    // The last chart point sits exactly on the viewBox edges (x=320, y
+    // clamped to 6-82), so the marker's own position is clamped inward —
+    // otherwise its triangle/label would be cut off by the chart's edge.
+    const trueX = CHART_X[CHART_X.length - 1];
+    const trueY = chartY[chartY.length - 1];
+    const x = Math.min(trueX, 312);
+    const rawGroupY = side === "buy" ? trueY + 14 : trueY - 14;
+    // Clamp bounds differ by side because the label sits below the arrow
+    // for a buy marker but above it for a sell marker — each needs its
+    // own margin from the opposite viewBox edge so the label text is
+    // never clipped by the chart's 0-90 boundary.
+    const groupY =
+      side === "buy" ? Math.min(68, Math.max(8, rawGroupY)) : Math.min(84, Math.max(20, rawGroupY));
+
+    chartMarker.setAttribute("transform", `translate(${x}, ${groupY})`);
+    chartMarker.classList.remove("is-buy", "is-sell", "is-visible");
+    void chartMarker.getBoundingClientRect(); // restart the pop-in animation
+    chartMarker.classList.add(side === "buy" ? "is-buy" : "is-sell", "is-visible");
+    chartMarker.setAttribute("opacity", "1");
+
+    if (chartMarkerStem) {
+      // Stem endpoints are in group-local coordinates: one end is the
+      // marker graphic itself (fixed), the other is wherever the true
+      // chart point actually is relative to the (possibly clamped)
+      // group origin, so the dashed line always reaches the line exactly.
+      chartMarkerStem.setAttribute("y1", String(trueY - groupY));
+      chartMarkerStem.setAttribute("y2", String(side === "buy" ? -6 : 6));
+    }
+    if (chartMarkerLabel) {
+      chartMarkerLabel.setAttribute("y", String(side === "buy" ? 17 : -10));
+      chartMarkerLabel.textContent = `${side.toUpperCase()} $${formatPrice(item)}`;
+    }
+  }
+
+  function hideChartMarker() {
+    if (!chartMarker) return;
+    chartMarker.setAttribute("opacity", "0");
+    chartMarker.classList.remove("is-visible");
+  }
+
   /* --- Recent trades: insert the trade the narrative just "filled" --- */
   function insertTradeRow(item, side) {
     if (!tradesBody) return;
@@ -397,6 +446,7 @@ function initDashboardDemo() {
       duration: 1600,
       enter() {
         setStrategyState("is-monitoring", "Monitoring");
+        hideChartMarker();
       },
     },
     {
@@ -438,6 +488,7 @@ function initDashboardDemo() {
           activeItem.price = activeItem.base * (1 + (nudgePct * (0.3 + Math.random() * 0.5)) / 100);
           renderWatchlistItem(activeItem, { flash: true });
           insertTradeRow(activeItem, activeSide);
+          showChartMarker(activeItem, activeSide);
         }
         watchlistState.forEach((item) => item.el.classList.remove("is-signal"));
       },
@@ -447,9 +498,13 @@ function initDashboardDemo() {
       duration: 2200,
       enter() {
         setStrategyState(null, "Running");
-        const bias = activeSide === "buy" ? 60 : -40;
-        const target = portfolioValue + bias + (Math.random() - 0.5) * 120;
-        portfolioValue += (target - portfolioValue) * 0.6;
+        // Anchored to the fixed baseline (not to the current value) so the
+        // figure keeps a visible per-trade nudge in the trade's direction
+        // without ever drifting away from ~$24,680 over a long session —
+        // which would otherwise eventually overflow the card's fixed width.
+        const bias = activeSide === "buy" ? 140 : -100;
+        const target = BASE_PORTFOLIO + bias + (Math.random() - 0.5) * 260;
+        portfolioValue += (target - portfolioValue) * 0.5;
         renderPortfolio();
         const endY = chartY.map((y, i) =>
           i === chartY.length - 1
