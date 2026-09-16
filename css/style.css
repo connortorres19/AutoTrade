@@ -463,7 +463,7 @@ section {
    ------------------------------------------------------------------------- */
 
 .hero {
-  padding: 88px 0 80px;
+  padding: 64px 0 72px;
   position: relative;
 }
 
@@ -479,10 +479,17 @@ section {
   z-index: -1;
 }
 
+/* The hero gets a wider stage than the rest of the site so the desktop
+   app preview can dominate the right side without the page-standard
+   1180px container capping it — every other section keeps that width. */
+.hero .container {
+  max-width: 1640px;
+}
+
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 64px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px;
   align-items: center;
 }
 
@@ -702,6 +709,19 @@ section {
   gap: 14px;
 }
 
+@media (min-width: 981px) {
+  .dashboard-main {
+    padding: 24px;
+    gap: 20px;
+  }
+  .dashboard-row {
+    gap: 16px;
+  }
+  .dashboard-card {
+    padding: 16px 18px;
+  }
+}
+
 .dashboard-card {
   background: var(--color-bg-alt);
   border: 1px solid var(--color-border);
@@ -833,10 +853,20 @@ section {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px 20px;
-  padding: 10px 6px;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
+  gap: 10px 20px;
+}
+
+/* On tall panels (the Market panel is stretched to match Recent Trades'
+   height), center the watchlist rows in the available space rather than
+   leaving them pinned to the top with dead space below. */
+.dashboard-panel-market {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-panel-market .dashboard-watchlist {
+  flex: 1;
+  align-content: center;
 }
 
 .watchlist-item {
@@ -893,7 +923,6 @@ section {
 @media (max-width: 480px) {
   .dashboard-watchlist {
     gap: 6px;
-    padding: 8px 4px;
   }
   .watchlist-item {
     gap: 4px;
@@ -915,6 +944,10 @@ section {
   position: relative;
 }
 
+.dashboard-panel-hero-chart {
+  padding: 18px 20px 22px;
+}
+
 .dashboard-panel-head {
   display: flex;
   align-items: center;
@@ -930,8 +963,23 @@ section {
 
 .chart-svg {
   width: 100%;
-  height: 90px;
+  height: 130px;
   display: block;
+}
+
+/* The performance chart is the dashboard's visual centerpiece, so it
+   grows much faster than the surrounding cards as the viewport widens —
+   not a uniform scale-up of the whole mockup. */
+@media (min-width: 561px) {
+  .chart-svg { height: 190px; }
+}
+
+@media (min-width: 981px) {
+  .chart-svg { height: 280px; }
+}
+
+@media (min-width: 1400px) {
+  .chart-svg { height: 340px; }
 }
 
 .chart-line {
