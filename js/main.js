@@ -201,15 +201,21 @@ function initCountUp() {
 }
 
 /* ---------------------------------------------------------------------
-   Hero dashboard demo: a lightweight, clearly-illustrative simulation of
-   the AutoTrade desktop app "coming alive" — portfolio value drifting,
-   a redrawing performance chart, a rotating trades list, a jittering
-   watchlist, and a hover tooltip on the chart. All values are synthetic
-   and are never meant to resemble real account/market data (see the
-   "Illustrative preview" caption rendered next to the dashboard).
+   Hero dashboard demo: a short, repeating, clearly-illustrative loop of
+   "AutoTrade making a trade" — the strategy scans the watchlist, flags a
+   symbol, places an order, the order fills into Recent Trades, and the
+   portfolio/chart settle to reflect it. Then it idles briefly and repeats.
+
+   This is a scripted narrative (not independent random jitter on every
+   element at once) so it reads as one coherent, watchable loop rather
+   than several unrelated numbers changing at the same time. All values
+   are synthetic — see the "Illustrative preview" caption next to the
+   dashboard and the chart's hover tooltip, both of which say so
+   explicitly.
 
    Runs only while the dashboard is on-screen and the tab is visible, and
-   is skipped entirely under prefers-reduced-motion.
+   is skipped entirely under prefers-reduced-motion (the dashboard just
+   keeps its static initial state).
    --------------------------------------------------------------------- */
 function initDashboardDemo() {
   const dashboard = document.querySelector(".dashboard");
@@ -231,16 +237,58 @@ function initDashboardDemo() {
   const fmtUsd = (n) =>
     "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  /* --- Portfolio value: small mean-reverting drift around the initial figure --- */
+  const SYMBOLS = [
+    { symbol: "NVDA", price: 118, decimals: 2 },
+    { symbol: "BTC", price: 64200, decimals: 0 },
+    { symbol: "AAPL", price: 221, decimals: 2 },
+    { symbol: "ETH", price: 3412, decimals: 0 },
+  ];
+
+  const watchlistState = watchlistItems.map((el) => {
+    const meta = SYMBOLS.find((s) => s.symbol === el.dataset.symbol) || SYMBOLS[0];
+    return {
+      el,
+      priceEl: el.querySelector("[data-wl-price]"),
+      chgEl: el.querySelector("[data-wl-chg]"),
+      symbol: meta.symbol,
+      decimals: meta.decimals,
+      base: meta.price,
+      price: meta.price,
+    };
+  });
+
+  function formatPrice(item) {
+    return item.price.toLocaleString("en-US", {
+      minimumFractionDigits: item.decimals,
+      maximumFractionDigits: item.decimals,
+    });
+  }
+
+  function renderWatchlistItem(item, { flash } = {}) {
+    const pct = ((item.price - item.base) / item.base) * 100;
+    const isUp = pct >= 0;
+    if (item.priceEl) {
+      item.priceEl.textContent = formatPrice(item);
+      if (flash) {
+        item.priceEl.classList.remove("flash-up", "flash-down");
+        void item.priceEl.offsetWidth; // restart the flash animation
+        item.priceEl.classList.add(isUp ? "flash-up" : "flash-down");
+      }
+    }
+    if (item.chgEl) {
+      item.chgEl.textContent = `${isUp ? "+" : ""}${pct.toFixed(1)}%`;
+      item.chgEl.classList.toggle("up", isUp);
+      item.chgEl.classList.toggle("down", !isUp);
+    }
+  }
+
+  /* --- Portfolio value: mean-reverting drift, nudged at "settle" --- */
   const DAY_START_VALUE = 24242;
   let portfolioValue = 24680;
 
-  function tickPortfolio() {
+  function renderPortfolio() {
     if (!portfolioEl) return;
-    const target = 24680 + (Math.random() - 0.5) * 900;
-    portfolioValue += (target - portfolioValue) * 0.35;
     portfolioEl.textContent = fmtUsd(portfolioValue);
-
     if (deltaEl) {
       const pct = ((portfolioValue - DAY_START_VALUE) / DAY_START_VALUE) * 100;
       const isUp = pct >= 0;
@@ -250,79 +298,14 @@ function initDashboardDemo() {
     }
   }
 
-  /* --- Strategy status: occasionally switch between Running / Monitoring --- */
-  function tickStrategy() {
-    if (!strategyEl || Math.random() > 0.3) return;
-    const isMonitoring = strategyEl.classList.toggle("is-monitoring");
+  /* --- Strategy status label + color per narrative phase --- */
+  function setStrategyState(state, label) {
+    if (!strategyEl) return;
+    strategyEl.classList.remove("is-monitoring", "is-scanning", "is-executing");
+    if (state) strategyEl.classList.add(state);
     strategyEl.childNodes.forEach((node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        node.textContent = isMonitoring ? "Monitoring" : "Running";
-      }
+      if (node.nodeType === Node.TEXT_NODE) node.textContent = label;
     });
-  }
-
-  /* --- Watchlist: small illustrative price jitter --- */
-  const watchlistState = watchlistItems.map((el) => {
-    const priceEl = el.querySelector("[data-wl-price]");
-    const base = parseFloat((priceEl?.textContent || "0").replace(/,/g, "")) || 100;
-    return { el, priceEl, chgEl: el.querySelector("[data-wl-chg]"), base, price: base };
-  });
-
-  function tickWatchlist() {
-    watchlistState.forEach((item) => {
-      // Mean-reverting jitter keeps the illustrative price near its
-      // starting point indefinitely, rather than drifting away over a
-      // long browsing session.
-      const target = item.base * (1 + (Math.random() - 0.5) * 0.02);
-      item.price += (target - item.price) * 0.4;
-      const pct = ((item.price - item.base) / item.base) * 100;
-      const isUp = pct >= 0;
-
-      if (item.priceEl) {
-        item.priceEl.textContent = item.price.toLocaleString("en-US", {
-          minimumFractionDigits: item.price < 1000 ? 2 : 0,
-          maximumFractionDigits: item.price < 1000 ? 2 : 0,
-        });
-        item.priceEl.classList.remove("flash-up", "flash-down");
-        // Force reflow so the flash class can be re-applied on consecutive ticks.
-        void item.priceEl.offsetWidth;
-        item.priceEl.classList.add(isUp ? "flash-up" : "flash-down");
-      }
-      if (item.chgEl) {
-        item.chgEl.textContent = `${isUp ? "+" : ""}${pct.toFixed(1)}%`;
-        item.chgEl.classList.toggle("up", isUp);
-        item.chgEl.classList.toggle("down", !isUp);
-      }
-    });
-  }
-
-  /* --- Recent trades: occasionally roll in a new synthetic trade --- */
-  const TRADE_SYMBOLS = [
-    { symbol: "NVDA", price: 118, decimals: 2 },
-    { symbol: "BTC", price: 64200, decimals: 0 },
-    { symbol: "AAPL", price: 221, decimals: 2 },
-    { symbol: "ETH", price: 3412, decimals: 0 },
-    { symbol: "TSLA", price: 242, decimals: 2 },
-    { symbol: "MSFT", price: 418, decimals: 2 },
-  ];
-
-  function tickTrades() {
-    if (!tradesBody) return;
-    const pick = TRADE_SYMBOLS[Math.floor(Math.random() * TRADE_SYMBOLS.length)];
-    const price = pick.price * (1 + (Math.random() - 0.5) * 0.01);
-    const side = Math.random() > 0.5 ? "buy" : "sell";
-    const priceStr = price.toLocaleString("en-US", {
-      minimumFractionDigits: pick.decimals,
-      maximumFractionDigits: pick.decimals,
-    });
-
-    const row = document.createElement("tr");
-    row.innerHTML = `<td>${pick.symbol}</td><td><span class="side-tag ${side}">${side.toUpperCase()}</span></td><td>$${priceStr}</td>`;
-    tradesBody.insertBefore(row, tradesBody.firstChild);
-
-    while (tradesBody.children.length > 3) {
-      tradesBody.removeChild(tradesBody.lastChild);
-    }
   }
 
   /* --- Performance chart: redraw with a smoothly animated transition --- */
@@ -342,13 +325,10 @@ function initDashboardDemo() {
     if (chartFill) chartFill.setAttribute("d", fill);
   }
 
-  function tickChart() {
+  function animateChartTo(endY, duration) {
     if (!chartLine) return;
     const startY = chartY.slice();
-    const endY = chartY.map((y) => Math.min(82, Math.max(6, y + (Math.random() - 0.5) * 22)));
-    const duration = 700;
     const start = performance.now();
-
     if (chartAnimFrame) cancelAnimationFrame(chartAnimFrame);
 
     const step = (now) => {
@@ -386,29 +366,124 @@ function initDashboardDemo() {
     chartSvg.addEventListener("mouseleave", hide);
   }
 
-  /* --- Master tick loop, gated by viewport visibility + tab visibility --- */
-  let intervalId = null;
-  let tickCount = 0;
+  /* --- Recent trades: insert the trade the narrative just "filled" --- */
+  function insertTradeRow(item, side) {
+    if (!tradesBody) return;
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${item.symbol}</td><td><span class="side-tag ${side}">${side.toUpperCase()}</span></td><td>$${formatPrice(item)}</td>`;
+    tradesBody.insertBefore(row, tradesBody.firstChild);
+    while (tradesBody.children.length > 3) {
+      tradesBody.removeChild(tradesBody.lastChild);
+    }
+  }
 
-  function runTick() {
-    tickCount++;
-    tickPortfolio();
-    tickWatchlist();
-    if (tickCount % 2 === 0) tickChart();
-    if (tickCount % 3 === 0) tickTrades();
-    if (tickCount % 4 === 0) tickStrategy();
+  /* -----------------------------------------------------------------
+     The narrative loop: one clear story per cycle, ~9 seconds long.
+     monitor → scanning → signal → executing → filled → settle → repeat
+     ----------------------------------------------------------------- */
+  let activeItem = null;
+  let activeSide = "buy";
+  let scanTimeouts = [];
+
+  function clearScanHighlights() {
+    scanTimeouts.forEach((id) => window.clearTimeout(id));
+    scanTimeouts = [];
+    watchlistState.forEach((item) => item.el.classList.remove("is-scanning", "is-signal"));
+  }
+
+  const PHASES = [
+    {
+      name: "monitor",
+      duration: 1600,
+      enter() {
+        setStrategyState("is-monitoring", "Monitoring");
+      },
+    },
+    {
+      name: "scanning",
+      duration: 1800,
+      enter() {
+        setStrategyState("is-scanning", "Scanning Markets");
+        watchlistState.forEach((item, i) => {
+          const onId = window.setTimeout(() => item.el.classList.add("is-scanning"), i * 350);
+          const offId = window.setTimeout(() => item.el.classList.remove("is-scanning"), i * 350 + 320);
+          scanTimeouts.push(onId, offId);
+        });
+      },
+    },
+    {
+      name: "signal",
+      duration: 1000,
+      enter() {
+        activeItem = watchlistState[Math.floor(Math.random() * watchlistState.length)];
+        activeSide = Math.random() > 0.5 ? "buy" : "sell";
+        setStrategyState("is-scanning", "Signal Detected");
+        activeItem.el.classList.add("is-signal");
+      },
+    },
+    {
+      name: "executing",
+      duration: 900,
+      enter() {
+        setStrategyState("is-executing", "Placing Order");
+      },
+    },
+    {
+      name: "filled",
+      duration: 700,
+      enter() {
+        setStrategyState("is-executing", "Order Filled");
+        if (activeItem) {
+          const nudgePct = activeSide === "buy" ? 1 : -1;
+          activeItem.price = activeItem.base * (1 + (nudgePct * (0.3 + Math.random() * 0.5)) / 100);
+          renderWatchlistItem(activeItem, { flash: true });
+          insertTradeRow(activeItem, activeSide);
+        }
+        watchlistState.forEach((item) => item.el.classList.remove("is-signal"));
+      },
+    },
+    {
+      name: "settle",
+      duration: 2200,
+      enter() {
+        setStrategyState(null, "Running");
+        const bias = activeSide === "buy" ? 60 : -40;
+        const target = portfolioValue + bias + (Math.random() - 0.5) * 120;
+        portfolioValue += (target - portfolioValue) * 0.6;
+        renderPortfolio();
+        const endY = chartY.map((y, i) =>
+          i === chartY.length - 1
+            ? Math.min(82, Math.max(6, y + (activeSide === "buy" ? -6 : 5)))
+            : y + (Math.random() - 0.5) * 6
+        );
+        animateChartTo(endY, 900);
+      },
+    },
+  ];
+
+  let phaseIndex = 0;
+  let phaseTimeoutId = null;
+
+  function runPhase() {
+    const phase = PHASES[phaseIndex];
+    phase.enter();
+    phaseTimeoutId = window.setTimeout(() => {
+      phaseIndex = (phaseIndex + 1) % PHASES.length;
+      runPhase();
+    }, phase.duration);
   }
 
   function start() {
-    if (reduceMotion || intervalId) return;
-    intervalId = window.setInterval(runTick, 2500);
+    if (reduceMotion || phaseTimeoutId) return;
+    runPhase();
   }
 
   function stop() {
-    if (intervalId) {
-      window.clearInterval(intervalId);
-      intervalId = null;
+    if (phaseTimeoutId) {
+      window.clearTimeout(phaseTimeoutId);
+      phaseTimeoutId = null;
     }
+    clearScanHighlights();
   }
 
   if (!reduceMotion && "IntersectionObserver" in window) {

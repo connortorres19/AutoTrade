@@ -791,6 +791,32 @@ section {
   50% { opacity: 0.35; }
 }
 
+.status-pulse.is-scanning {
+  color: var(--color-primary);
+}
+
+.status-pulse.is-scanning .status-pulse-dot {
+  background: var(--color-primary);
+}
+
+.status-pulse.is-scanning .status-pulse-dot::after {
+  border-color: var(--color-primary);
+  animation-duration: 1s;
+}
+
+.status-pulse.is-executing {
+  color: var(--color-warning);
+}
+
+.status-pulse.is-executing .status-pulse-dot {
+  background: var(--color-warning);
+  animation: breathe 0.5s ease-in-out infinite;
+}
+
+.status-pulse.is-executing .status-pulse-dot::after {
+  display: none;
+}
+
 .dashboard-watchlist {
   display: flex;
   flex-wrap: wrap;
@@ -807,8 +833,24 @@ section {
   flex: 0 0 auto;
   align-items: baseline;
   gap: 6px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  border-radius: 5px;
   font-family: var(--font-mono);
   font-size: 12px;
+  transition: background var(--dur-base) var(--ease-out);
+}
+
+.watchlist-item.is-scanning {
+  background: rgba(25, 211, 174, 0.1);
+}
+
+.watchlist-item.is-signal {
+  background: rgba(25, 211, 174, 0.18);
+}
+
+.watchlist-item.is-signal .wl-sym {
+  color: var(--color-primary);
 }
 
 .wl-sym {
