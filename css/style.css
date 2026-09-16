@@ -463,7 +463,7 @@ section {
    ------------------------------------------------------------------------- */
 
 .hero {
-  padding: 64px 0 72px;
+  padding: 40px 0 44px;
   position: relative;
 }
 
@@ -483,13 +483,13 @@ section {
    app preview can dominate the right side without the page-standard
    1180px container capping it — every other section keeps that width. */
 .hero .container {
-  max-width: 1640px;
+  max-width: 1520px;
 }
 
 .hero-grid {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 48px;
+  gap: 40px;
   align-items: center;
 }
 
@@ -711,14 +711,14 @@ section {
 
 @media (min-width: 981px) {
   .dashboard-main {
-    padding: 24px;
-    gap: 20px;
+    padding: 20px;
+    gap: 14px;
   }
   .dashboard-row {
-    gap: 16px;
+    gap: 14px;
   }
   .dashboard-card {
-    padding: 16px 18px;
+    padding: 13px 16px;
   }
 }
 
@@ -945,7 +945,7 @@ section {
 }
 
 .dashboard-panel-hero-chart {
-  padding: 18px 20px 22px;
+  padding: 14px 18px 16px;
 }
 
 .dashboard-panel-head {
@@ -963,23 +963,24 @@ section {
 
 .chart-svg {
   width: 100%;
-  height: 130px;
+  height: 120px;
   display: block;
 }
 
 /* The performance chart is the dashboard's visual centerpiece, so it
-   grows much faster than the surrounding cards as the viewport widens —
-   not a uniform scale-up of the whole mockup. */
+   grows faster than the surrounding cards as the viewport widens — but
+   capped so the full dashboard still fits above the fold at typical
+   desktop heights (900-1080px) without scrolling. */
 @media (min-width: 561px) {
-  .chart-svg { height: 190px; }
+  .chart-svg { height: 165px; }
 }
 
 @media (min-width: 981px) {
-  .chart-svg { height: 280px; }
+  .chart-svg { height: 210px; }
 }
 
 @media (min-width: 1400px) {
-  .chart-svg { height: 340px; }
+  .chart-svg { height: 230px; }
 }
 
 .chart-line {
@@ -1018,47 +1019,77 @@ section {
 }
 
 .chart-marker {
-  transition: opacity var(--dur-base) var(--ease-out);
+  transition: opacity var(--dur-fast) linear;
   pointer-events: none;
 }
 
-.chart-marker.is-buy { color: var(--color-success); }
-.chart-marker.is-sell { color: var(--color-danger); }
+.chart-marker.is-buy,
+.chart-marker-entry { color: var(--color-success); }
+.chart-marker.is-sell,
+.chart-marker-exit { color: var(--color-danger); }
 
-.chart-marker-stem {
-  stroke: currentColor;
-  stroke-width: 1;
-  stroke-dasharray: 2 2;
-  opacity: 0.55;
-}
-
-.chart-marker-arrow {
+.chart-marker-dot {
   fill: currentColor;
-}
-
-.chart-marker.is-sell .chart-marker-arrow {
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: rotate(180deg);
+  stroke: var(--color-bg-alt);
+  stroke-width: 1.2;
 }
 
 .chart-marker-label {
   fill: currentColor;
   font-family: var(--font-mono);
-  font-size: 7px;
+  font-size: 7.5px;
   font-weight: 700;
 }
 
+/* The pop animation lives on a nested inner group, never on .chart-marker
+   itself — that outer group carries the JS-set translate(x,y) SVG
+   attribute, and a CSS `transform` (which is what @keyframes animates)
+   always overrides an element's own transform attribute. Animating the
+   outer group directly would replace its position with the animation's
+   scale for the animation's duration, making the marker render at the
+   wrong place until the animation ends. */
 .chart-marker.is-visible .chart-marker-inner {
-  animation: marker-pop 420ms var(--ease-out);
+  animation: marker-pop 320ms var(--ease-out);
   transform-box: fill-box;
   transform-origin: center;
 }
 
 @keyframes marker-pop {
-  0% { transform: scale(0.3); }
-  65% { transform: scale(1.2); }
+  0% { transform: scale(0.4); }
+  60% { transform: scale(1.25); }
   100% { transform: scale(1); }
+}
+
+.chart-position-line {
+  stroke: var(--color-text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  /* No opacity here: a CSS opacity property always wins over the SVG
+     `opacity` attribute the JS sets, which would make the line
+     permanently invisible regardless of what JS does. The HTML's
+     initial opacity="0" attribute handles the starting state instead,
+     the same pattern the (working) chart markers already use. */
+  transition: opacity var(--dur-fast) linear;
+}
+
+.chart-price-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.chart-price-readout .dashboard-card-delta {
+  font-size: 10.5px;
+  margin-top: 0;
+}
+
+#dash-chart-symbol {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .chart-tooltip {

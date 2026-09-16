@@ -91,8 +91,13 @@
 
                 <div class="dashboard-panel dashboard-panel-chart dashboard-panel-hero-chart">
                   <div class="dashboard-panel-head">
-                    <span class="dashboard-panel-title">Performance</span>
-                    <span class="text-muted mono" style="font-size: 11px;">30D</span>
+                    <span class="dashboard-panel-title">
+                      Performance · <span id="dash-chart-symbol" class="mono">NVDA</span>
+                    </span>
+                    <span class="chart-price-readout">
+                      <span class="mono" id="dash-chart-price">$118.42</span>
+                      <span class="dashboard-card-delta up" id="dash-chart-tick-delta">+0.00</span>
+                    </span>
                   </div>
                   <svg class="chart-svg" id="dash-chart-svg" viewBox="0 0 320 90" preserveAspectRatio="none">
                     <defs>
@@ -104,11 +109,25 @@
                     <path class="chart-fill" id="dash-chart-fill" d="M0,70 L20,64 L45,68 L70,52 L95,58 L120,40 L145,46 L170,30 L195,36 L220,22 L245,28 L270,14 L295,20 L320,8 L320,90 L0,90 Z" />
                     <path class="chart-line" id="dash-chart-line" d="M0,70 L20,64 L45,68 L70,52 L95,58 L120,40 L145,46 L170,30 L195,36 L220,22 L245,28 L270,14 L295,20 L320,8" />
                     <circle class="chart-hover-dot" id="dash-chart-dot" r="3.2" cx="320" cy="8" opacity="0" />
-                    <g class="chart-marker" id="dash-chart-marker" opacity="0">
+                    <line class="chart-position-line" id="dash-position-line" x1="0" y1="0" x2="0" y2="0" opacity="0" />
+                    <g class="chart-marker chart-marker-entry" id="dash-entry-marker" opacity="0">
                       <g class="chart-marker-inner">
-                        <line id="dash-chart-marker-stem" class="chart-marker-stem" x1="0" y1="0" x2="0" y2="0" />
-                        <path id="dash-chart-marker-arrow" class="chart-marker-arrow" d="M-5,4 L5,4 L0,-6 Z" />
-                        <text id="dash-chart-marker-label" class="chart-marker-label" text-anchor="end"></text>
+                        <circle class="chart-marker-dot" r="3" />
+                        <text class="chart-marker-label" id="dash-entry-label" text-anchor="middle">
+                          <tspan x="0" dy="0"></tspan>
+                          <tspan x="0" dy="8"></tspan>
+                          <tspan x="0" dy="8"></tspan>
+                        </text>
+                      </g>
+                    </g>
+                    <g class="chart-marker chart-marker-exit" id="dash-exit-marker" opacity="0">
+                      <g class="chart-marker-inner">
+                        <circle class="chart-marker-dot" r="3" />
+                        <text class="chart-marker-label" id="dash-exit-label" text-anchor="middle">
+                          <tspan x="0" dy="0"></tspan>
+                          <tspan x="0" dy="8"></tspan>
+                          <tspan x="0" dy="8"></tspan>
+                        </text>
                       </g>
                     </g>
                   </svg>

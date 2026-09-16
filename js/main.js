@@ -228,17 +228,26 @@ function initDashboardDemo() {
   const chartSvg = document.getElementById("dash-chart-svg");
   const chartLine = document.getElementById("dash-chart-line");
   const chartFill = document.getElementById("dash-chart-fill");
-  const chartDot = document.getElementById("dash-chart-dot");
+  const chartHoverDot = document.getElementById("dash-chart-dot");
   const chartTooltip = document.getElementById("dash-chart-tooltip");
-  const chartMarker = document.getElementById("dash-chart-marker");
-  const chartMarkerStem = document.getElementById("dash-chart-marker-stem");
-  const chartMarkerLabel = document.getElementById("dash-chart-marker-label");
+  const chartSymbolEl = document.getElementById("dash-chart-symbol");
+  const chartPriceEl = document.getElementById("dash-chart-price");
+  const chartDeltaEl = document.getElementById("dash-chart-tick-delta");
+  const positionLine = document.getElementById("dash-position-line");
+  const entryMarker = document.getElementById("dash-entry-marker");
+  const entryLabel = document.getElementById("dash-entry-label");
+  const exitMarker = document.getElementById("dash-exit-marker");
+  const exitLabel = document.getElementById("dash-exit-label");
   const watchlistItems = Array.from(document.querySelectorAll("#dash-watchlist .watchlist-item"));
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const fmtUsd = (n) =>
     "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Explicit sign on both sides: toFixed(Math.abs(...)) silently drops the
+  // minus sign on a loss, leaving only color to convey direction.
+  const fmtSignedUsd = (n) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
 
   const SYMBOLS = [
     { symbol: "NVDA", price: 118, decimals: 2 },
@@ -260,10 +269,10 @@ function initDashboardDemo() {
     };
   });
 
-  function formatPrice(item) {
-    return item.price.toLocaleString("en-US", {
-      minimumFractionDigits: item.decimals,
-      maximumFractionDigits: item.decimals,
+  function formatBySymbol(price, decimals) {
+    return price.toLocaleString("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     });
   }
 
@@ -271,7 +280,7 @@ function initDashboardDemo() {
     const pct = ((item.price - item.base) / item.base) * 100;
     const isUp = pct >= 0;
     if (item.priceEl) {
-      item.priceEl.textContent = formatPrice(item);
+      item.priceEl.textContent = formatBySymbol(item.price, item.decimals);
       if (flash) {
         item.priceEl.classList.remove("flash-up", "flash-down");
         void item.priceEl.offsetWidth; // restart the flash animation
@@ -285,7 +294,8 @@ function initDashboardDemo() {
     }
   }
 
-  /* --- Portfolio value: mean-reverting drift, nudged at "settle" --- */
+  /* --- Portfolio value: mean-reverting drift, nudged whenever a
+     simulated position closes --- */
   const DAY_START_VALUE = 24242;
   const BASE_PORTFOLIO = 24680;
   let portfolioValue = BASE_PORTFOLIO;
@@ -302,7 +312,14 @@ function initDashboardDemo() {
     }
   }
 
-  /* --- Strategy status label + color per narrative phase --- */
+  function nudgePortfolio(pnlSign) {
+    const bias = pnlSign >= 0 ? 140 : -100;
+    const target = BASE_PORTFOLIO + bias + (Math.random() - 0.5) * 260;
+    portfolioValue += (target - portfolioValue) * 0.5;
+    renderPortfolio();
+  }
+
+  /* --- Strategy status label + color per state --- */
   function setStrategyState(state, label) {
     if (!strategyEl) return;
     strategyEl.classList.remove("is-monitoring", "is-scanning", "is-executing");
@@ -312,234 +329,381 @@ function initDashboardDemo() {
     });
   }
 
-  /* --- Performance chart: redraw with a smoothly animated transition --- */
-  const CHART_X = [0, 20, 45, 70, 95, 120, 145, 170, 195, 220, 245, 270, 295, 320];
-  let chartY = [70, 64, 68, 52, 58, 40, 46, 30, 36, 22, 28, 14, 20, 8];
-  let chartAnimFrame = null;
+  /* =====================================================================
+     TICK-DRIVEN PRICE FEED
+     A fixed-length sliding window of real prices for whichever symbol is
+     "active" this cycle. Every tick appends one new price and drops the
+     oldest — no interpolation, no tweening. The path's `d` attribute is
+     set directly to the new coordinates each tick, so the line visibly
+     steps rather than flowing smoothly, exactly like a live tick chart.
+     ===================================================================== */
+  const CHART_POINTS = 26;
+  const CHART_W = 320;
+  const CHART_H = 90;
+  const CHART_X = Array.from({ length: CHART_POINTS }, (_, i) => (i * CHART_W) / (CHART_POINTS - 1));
 
-  function buildPaths(ys) {
-    const line = CHART_X.map((x, i) => `${i === 0 ? "M" : "L"}${x},${ys[i].toFixed(1)}`).join(" ");
-    const fill = `${line} L320,90 L0,90 Z`;
-    return { line, fill };
+  let activeSymbol = SYMBOLS[0];
+  let priceWindow = [];
+  let lastPrice = 0;
+  let lastScale = { lo: 0, hi: 1 };
+
+  function seedPriceWindow(meta) {
+    activeSymbol = meta;
+    priceWindow = [meta.price];
+    for (let i = 1; i < CHART_POINTS; i++) {
+      const prev = priceWindow[i - 1];
+      priceWindow.push(prev * (1 + (Math.random() - 0.5) * 0.006));
+    }
+    lastPrice = priceWindow[priceWindow.length - 1];
+    if (chartSymbolEl) chartSymbolEl.textContent = meta.symbol;
   }
 
-  function renderChart(ys) {
-    const { line, fill } = buildPaths(ys);
+  function computeScale(prices) {
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const range = max - min || min * 0.01 || 1;
+    const pad = range * 0.18;
+    return { lo: min - pad, hi: max + pad };
+  }
+
+  function priceToY(price, scale) {
+    const t = (price - scale.lo) / (scale.hi - scale.lo);
+    const inset = 5;
+    return inset + (1 - t) * (CHART_H - inset * 2);
+  }
+
+  function renderChartInstant() {
+    lastScale = computeScale(priceWindow);
+    const ys = priceWindow.map((p) => priceToY(p, lastScale));
+    const line = CHART_X.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+    const fill = `${line} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
     if (chartLine) chartLine.setAttribute("d", line);
     if (chartFill) chartFill.setAttribute("d", fill);
   }
 
-  function animateChartTo(endY, duration) {
-    if (!chartLine) return;
-    const startY = chartY.slice();
-    const start = performance.now();
-    if (chartAnimFrame) cancelAnimationFrame(chartAnimFrame);
-
-    const step = (now) => {
-      const t = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - t, 2);
-      const frameY = startY.map((y, i) => y + (endY[i] - y) * eased);
-      renderChart(frameY);
-      if (t < 1) {
-        chartAnimFrame = requestAnimationFrame(step);
-      } else {
-        chartY = endY;
-      }
-    };
-    chartAnimFrame = requestAnimationFrame(step);
+  function renderPriceReadout(prevPrice) {
+    if (chartPriceEl) chartPriceEl.textContent = "$" + formatBySymbol(lastPrice, activeSymbol.decimals);
+    if (chartDeltaEl && !position) {
+      const pct = ((lastPrice - prevPrice) / prevPrice) * 100;
+      const isUp = pct >= 0;
+      chartDeltaEl.textContent = `${isUp ? "+" : ""}${pct.toFixed(2)}%`;
+      chartDeltaEl.classList.toggle("up", isUp);
+      chartDeltaEl.classList.toggle("down", !isUp);
+    }
   }
 
   /* --- Chart hover tooltip --- */
-  if (chartSvg && chartTooltip && chartDot) {
+  if (chartSvg && chartTooltip && chartHoverDot) {
     const showAt = (clientX) => {
       const rect = chartSvg.getBoundingClientRect();
       const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
       const idx = Math.round(fraction * (CHART_X.length - 1));
-      chartDot.setAttribute("cx", String(CHART_X[idx]));
-      chartDot.setAttribute("cy", String(chartY[idx]));
-      chartDot.setAttribute("opacity", "1");
-      chartTooltip.textContent = `Point ${idx + 1} of ${CHART_X.length} · simulated, not real trading data`;
+      const y = priceToY(priceWindow[idx], lastScale);
+      chartHoverDot.setAttribute("cx", String(CHART_X[idx]));
+      chartHoverDot.setAttribute("cy", String(y));
+      chartHoverDot.setAttribute("opacity", "1");
+      chartTooltip.textContent = `$${formatBySymbol(priceWindow[idx], activeSymbol.decimals)} · simulated tick, not real trading data`;
       chartTooltip.classList.add("is-visible");
     };
     const hide = () => {
-      chartDot.setAttribute("opacity", "0");
+      chartHoverDot.setAttribute("opacity", "0");
       chartTooltip.classList.remove("is-visible");
     };
-
     chartSvg.addEventListener("mousemove", (e) => showAt(e.clientX));
     chartSvg.addEventListener("mouseleave", hide);
   }
 
-  /* --- Trade marker: plant a BUY/SELL flag on the chart at the exact
-     point a trade fills, like a real trading platform's execution
-     marker — this is the actual "show it on the graph" moment. --- */
-  function showChartMarker(item, side) {
-    if (!chartMarker) return;
-    // The last chart point sits exactly on the viewBox edges (x=320, y
-    // clamped to 6-82), so the marker's own position is clamped inward —
-    // otherwise its triangle/label would be cut off by the chart's edge.
-    const trueX = CHART_X[CHART_X.length - 1];
-    const trueY = chartY[chartY.length - 1];
-    const x = Math.min(trueX, 312);
-    const rawGroupY = side === "buy" ? trueY + 14 : trueY - 14;
-    // Clamp bounds differ by side because the label sits below the arrow
-    // for a buy marker but above it for a sell marker — each needs its
-    // own margin from the opposite viewBox edge so the label text is
-    // never clipped by the chart's 0-90 boundary.
-    const groupY =
-      side === "buy" ? Math.min(68, Math.max(8, rawGroupY)) : Math.min(84, Math.max(20, rawGroupY));
+  /* =====================================================================
+     ENTRY / EXIT MARKERS + POSITION LINE
+     A position is opened and closed at specific ticks (not on a fixed
+     timer). Each marker tracks the index of its own tick within the
+     sliding window and is re-positioned every subsequent tick as that
+     window shifts left, so it visibly rides along with its original
+     price point until the trade resets.
+     ===================================================================== */
+  let position = null; // { entryPrice, entryIndex } while open/closed
+  let exitInfo = null; // { exitPrice, exitIndex } once closed
 
-    chartMarker.setAttribute("transform", `translate(${x}, ${groupY})`);
-    chartMarker.classList.remove("is-buy", "is-sell", "is-visible");
-    void chartMarker.getBoundingClientRect(); // restart the pop-in animation
-    chartMarker.classList.add(side === "buy" ? "is-buy" : "is-sell", "is-visible");
-    chartMarker.setAttribute("opacity", "1");
+  function clampLabelDx(x) {
+    const margin = 30;
+    if (x < margin) return margin - x;
+    if (x > CHART_W - margin) return CHART_W - margin - x;
+    return 0;
+  }
 
-    if (chartMarkerStem) {
-      // Stem endpoints are in group-local coordinates: one end is the
-      // marker graphic itself (fixed), the other is wherever the true
-      // chart point actually is relative to the (possibly clamped)
-      // group origin, so the dashed line always reaches the line exactly.
-      chartMarkerStem.setAttribute("y1", String(trueY - groupY));
-      chartMarkerStem.setAttribute("y2", String(side === "buy" ? -6 : 6));
+  // The 3-line label prefers below-the-point for a buy and above for a
+  // sell, but flips to the other side when the preferred side would run
+  // past the chart's top/bottom edge — e.g. a buy very close to the
+  // bottom of the visible price range would otherwise clip.
+  const LABEL_BLOCK_HEIGHT = 34;
+  function resolveLabelBelow(y, preferBelow) {
+    if (preferBelow && y + LABEL_BLOCK_HEIGHT > CHART_H - 2) return false;
+    if (!preferBelow && y - LABEL_BLOCK_HEIGHT < 2) return true;
+    return preferBelow;
+  }
+
+  function setMarkerLabel(textEl, lines) {
+    const tspans = textEl.querySelectorAll("tspan");
+    lines.forEach((line, i) => {
+      if (tspans[i]) tspans[i].textContent = line;
+    });
+  }
+
+  function positionLabel(textEl, x, y, side) {
+    const dx = clampLabelDx(x);
+    textEl.querySelectorAll("tspan").forEach((t) => t.setAttribute("x", String(dx)));
+    const below = resolveLabelBelow(y, side === "buy");
+    textEl.setAttribute("y", String(below ? 15 : -21));
+  }
+
+  function placeMarker(groupEl, textEl, x, y, side, lines) {
+    groupEl.setAttribute("transform", `translate(${x.toFixed(1)}, ${y.toFixed(1)})`);
+    positionLabel(textEl, x, y, side);
+    setMarkerLabel(textEl, lines);
+    groupEl.setAttribute("opacity", "1");
+  }
+
+  function popMarker(groupEl) {
+    groupEl.classList.remove("is-visible");
+    void groupEl.getBoundingClientRect();
+    groupEl.classList.add("is-visible");
+  }
+
+  function hideMarker(groupEl) {
+    groupEl.setAttribute("opacity", "0");
+    groupEl.classList.remove("is-visible");
+  }
+
+  function updatePositionVisuals() {
+    if (!position) return;
+    const entryY = priceToY(position.entryPrice, lastScale);
+    const entryX = CHART_X[position.entryIndex];
+    if (position.entryIndex < 0) {
+      hideMarker(entryMarker);
+    } else if (entryMarker) {
+      entryMarker.setAttribute("transform", `translate(${entryX.toFixed(1)}, ${entryY.toFixed(1)})`);
+      positionLabel(entryLabel, entryX, entryY, "buy");
     }
-    if (chartMarkerLabel) {
-      chartMarkerLabel.setAttribute("y", String(side === "buy" ? 17 : -10));
-      chartMarkerLabel.textContent = `${side.toUpperCase()} $${formatPrice(item)}`;
+
+    if (exitInfo) {
+      const exitY = priceToY(exitInfo.exitPrice, lastScale);
+      const exitX = CHART_X[exitInfo.exitIndex];
+      if (exitInfo.exitIndex < 0) {
+        hideMarker(exitMarker);
+      } else if (exitMarker) {
+        exitMarker.setAttribute("transform", `translate(${exitX.toFixed(1)}, ${exitY.toFixed(1)})`);
+        positionLabel(exitLabel, exitX, exitY, "sell");
+      }
+    }
+
+    if (positionLine) {
+      const x1 = Math.max(0, CHART_X[Math.max(position.entryIndex, 0)]);
+      const x2 = exitInfo ? CHART_X[Math.max(exitInfo.exitIndex, 0)] : CHART_X[CHART_X.length - 1];
+      positionLine.setAttribute("x1", String(x1));
+      positionLine.setAttribute("x2", String(x2));
+      positionLine.setAttribute("y1", String(entryY));
+      positionLine.setAttribute("y2", String(entryY));
+      positionLine.setAttribute("opacity", position.entryIndex < 0 && !exitInfo ? "0" : "1");
+    }
+
+    if (!exitInfo && chartDeltaEl) {
+      const pnl = lastPrice - position.entryPrice;
+      chartDeltaEl.textContent = `${fmtSignedUsd(pnl)} P/L`;
+      chartDeltaEl.classList.toggle("up", pnl >= 0);
+      chartDeltaEl.classList.toggle("down", pnl < 0);
     }
   }
 
-  function hideChartMarker() {
-    if (!chartMarker) return;
-    chartMarker.setAttribute("opacity", "0");
-    chartMarker.classList.remove("is-visible");
+  function shiftMarkerIndices() {
+    if (position) position.entryIndex -= 1;
+    if (exitInfo) exitInfo.exitIndex -= 1;
   }
 
-  /* --- Recent trades: insert the trade the narrative just "filled" --- */
-  function insertTradeRow(item, side) {
+  function resetPosition() {
+    position = null;
+    exitInfo = null;
+    if (entryMarker) hideMarker(entryMarker);
+    if (exitMarker) hideMarker(exitMarker);
+    if (positionLine) positionLine.setAttribute("opacity", "0");
+  }
+
+  /* --- Recent trades log --- */
+  function insertTradeRow(symbol, side, price, decimals) {
     if (!tradesBody) return;
     const row = document.createElement("tr");
-    row.innerHTML = `<td>${item.symbol}</td><td><span class="side-tag ${side}">${side.toUpperCase()}</span></td><td>$${formatPrice(item)}</td>`;
+    row.innerHTML = `<td>${symbol}</td><td><span class="side-tag ${side}">${side.toUpperCase()}</span></td><td>$${formatBySymbol(price, decimals)}</td>`;
     tradesBody.insertBefore(row, tradesBody.firstChild);
     while (tradesBody.children.length > 3) {
       tradesBody.removeChild(tradesBody.lastChild);
     }
   }
 
-  /* -----------------------------------------------------------------
-     The narrative loop: one clear story per cycle, ~9 seconds long.
-     monitor → scanning → signal → executing → filled → settle → repeat
-     ----------------------------------------------------------------- */
-  let activeItem = null;
-  let activeSide = "buy";
-  let scanTimeouts = [];
+  /* =====================================================================
+     STATE MACHINE — tick-counted, not time-counted. A phase ends and the
+     next begins exactly on the tick that completes its target count, so
+     BUY/SELL fire at a specific tick rather than after a fixed delay.
+     monitor -> scanning -> signal -> (BUY on this tick) -> position-open
+     -> (SELL on this tick) -> position-closed -> reset -> monitor
+     ===================================================================== */
+  const randInt = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
 
-  function clearScanHighlights() {
-    scanTimeouts.forEach((id) => window.clearTimeout(id));
-    scanTimeouts = [];
-    watchlistState.forEach((item) => item.el.classList.remove("is-scanning", "is-signal"));
+  let phase = "monitor";
+  let phaseTicks = 0;
+  let phaseTarget = 0;
+
+  function enterPhase(name) {
+    phase = name;
+    phaseTicks = 0;
+    if (name === "monitor") {
+      phaseTarget = randInt(4, 7);
+      setStrategyState("is-monitoring", "Monitoring");
+    } else if (name === "scanning") {
+      phaseTarget = randInt(4, 6);
+      setStrategyState("is-scanning", "Scanning Markets");
+    } else if (name === "signal") {
+      phaseTarget = randInt(3, 5);
+      setStrategyState("is-scanning", "Signal Detected");
+      const row = watchlistState.find((w) => w.symbol === activeSymbol.symbol);
+      if (row) row.el.classList.add("is-signal");
+    } else if (name === "position-open") {
+      phaseTarget = randInt(7, 12);
+      setStrategyState("is-executing", "Position Open");
+    } else if (name === "position-closed") {
+      phaseTarget = randInt(3, 4);
+      setStrategyState(null, "Position Closed");
+    }
   }
 
-  const PHASES = [
-    {
-      name: "monitor",
-      duration: 1600,
-      enter() {
-        setStrategyState("is-monitoring", "Monitoring");
-        hideChartMarker();
-      },
-    },
-    {
-      name: "scanning",
-      duration: 1800,
-      enter() {
-        setStrategyState("is-scanning", "Scanning Markets");
-        watchlistState.forEach((item, i) => {
-          const onId = window.setTimeout(() => item.el.classList.add("is-scanning"), i * 350);
-          const offId = window.setTimeout(() => item.el.classList.remove("is-scanning"), i * 350 + 320);
-          scanTimeouts.push(onId, offId);
-        });
-      },
-    },
-    {
-      name: "signal",
-      duration: 1000,
-      enter() {
-        activeItem = watchlistState[Math.floor(Math.random() * watchlistState.length)];
-        activeSide = Math.random() > 0.5 ? "buy" : "sell";
-        setStrategyState("is-scanning", "Signal Detected");
-        activeItem.el.classList.add("is-signal");
-      },
-    },
-    {
-      name: "executing",
-      duration: 900,
-      enter() {
-        setStrategyState("is-executing", "Placing Order");
-      },
-    },
-    {
-      name: "filled",
-      duration: 700,
-      enter() {
-        setStrategyState("is-executing", "Order Filled");
-        if (activeItem) {
-          const nudgePct = activeSide === "buy" ? 1 : -1;
-          activeItem.price = activeItem.base * (1 + (nudgePct * (0.3 + Math.random() * 0.5)) / 100);
-          renderWatchlistItem(activeItem, { flash: true });
-          insertTradeRow(activeItem, activeSide);
-          showChartMarker(activeItem, activeSide);
-        }
-        watchlistState.forEach((item) => item.el.classList.remove("is-signal"));
-      },
-    },
-    {
-      name: "settle",
-      duration: 2200,
-      enter() {
-        setStrategyState(null, "Running");
-        // Anchored to the fixed baseline (not to the current value) so the
-        // figure keeps a visible per-trade nudge in the trade's direction
-        // without ever drifting away from ~$24,680 over a long session —
-        // which would otherwise eventually overflow the card's fixed width.
-        const bias = activeSide === "buy" ? 140 : -100;
-        const target = BASE_PORTFOLIO + bias + (Math.random() - 0.5) * 260;
-        portfolioValue += (target - portfolioValue) * 0.5;
-        renderPortfolio();
-        const endY = chartY.map((y, i) =>
-          i === chartY.length - 1
-            ? Math.min(82, Math.max(6, y + (activeSide === "buy" ? -6 : 5)))
-            : y + (Math.random() - 0.5) * 6
-        );
-        animateChartTo(endY, 900);
-      },
-    },
-  ];
+  function executeBuy() {
+    const entryIndex = CHART_X.length - 1;
+    position = { entryPrice: lastPrice, entryIndex };
+    watchlistState.forEach((w) => w.el.classList.remove("is-signal"));
+    insertTradeRow(activeSymbol.symbol, "buy", lastPrice, activeSymbol.decimals);
+    placeMarker(entryMarker, entryLabel, CHART_X[entryIndex], priceToY(lastPrice, lastScale), "buy", [
+      "BUY",
+      "ENTRY",
+      "$" + formatBySymbol(lastPrice, activeSymbol.decimals),
+    ]);
+    popMarker(entryMarker);
+    if (chartDeltaEl) {
+      chartDeltaEl.textContent = "+$0.00 P/L";
+      chartDeltaEl.classList.add("up");
+      chartDeltaEl.classList.remove("down");
+    }
+    updatePositionVisuals(); // sets the position line's real coordinates immediately
+  }
 
-  let phaseIndex = 0;
-  let phaseTimeoutId = null;
+  function executeSell() {
+    if (!position) return;
+    const exitIndex = CHART_X.length - 1;
+    exitInfo = { exitPrice: lastPrice, exitIndex };
+    insertTradeRow(activeSymbol.symbol, "sell", lastPrice, activeSymbol.decimals);
+    placeMarker(exitMarker, exitLabel, CHART_X[exitIndex], priceToY(lastPrice, lastScale), "sell", [
+      "SELL",
+      "EXIT",
+      "$" + formatBySymbol(lastPrice, activeSymbol.decimals),
+    ]);
+    popMarker(exitMarker);
+    const pnl = lastPrice - position.entryPrice;
+    if (chartDeltaEl) {
+      chartDeltaEl.textContent = `${fmtSignedUsd(pnl)} P/L`;
+      chartDeltaEl.classList.toggle("up", pnl >= 0);
+      chartDeltaEl.classList.toggle("down", pnl < 0);
+    }
+    nudgePortfolio(pnl);
+  }
 
-  function runPhase() {
-    const phase = PHASES[phaseIndex];
-    phase.enter();
-    phaseTimeoutId = window.setTimeout(() => {
-      phaseIndex = (phaseIndex + 1) % PHASES.length;
-      runPhase();
-    }, phase.duration);
+  function advancePhase() {
+    phaseTicks += 1;
+    if (phaseTicks < phaseTarget) return;
+
+    if (phase === "monitor") {
+      enterPhase("scanning");
+    } else if (phase === "scanning") {
+      enterPhase("signal");
+    } else if (phase === "signal") {
+      executeBuy();
+      enterPhase("position-open");
+    } else if (phase === "position-open") {
+      executeSell();
+      enterPhase("position-closed");
+    } else if (phase === "position-closed") {
+      resetPosition();
+      seedPriceWindow(SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]);
+      renderChartInstant();
+      renderPriceReadout(lastPrice);
+      enterPhase("monitor");
+    }
+  }
+
+  function runScanSweepTick() {
+    watchlistState.forEach((w) => w.el.classList.remove("is-scanning"));
+    watchlistState[phaseTicks % watchlistState.length].el.classList.add("is-scanning");
+  }
+
+  function ambientJitterOtherSymbols() {
+    watchlistState.forEach((item) => {
+      if (item.symbol === activeSymbol.symbol) return;
+      if (Math.random() > 0.3) return;
+      const target = item.base * (1 + (Math.random() - 0.5) * 0.02);
+      item.price += (target - item.price) * 0.4;
+      renderWatchlistItem(item, { flash: true });
+    });
+  }
+
+  /* --- Master tick: every 300-800ms, one discrete price update --- */
+  let tickTimeoutId = null;
+
+  function runTick() {
+    const prevPrice = lastPrice;
+    const bigMove = Math.random() < 0.12;
+    const pct = (Math.random() - 0.5) * (bigMove ? 0.012 : 0.0035);
+    lastPrice = Math.max(0.01, lastPrice * (1 + pct));
+    priceWindow.push(lastPrice);
+    priceWindow.shift();
+    shiftMarkerIndices();
+
+    renderChartInstant();
+    renderPriceReadout(prevPrice);
+
+    if (activeSymbol) {
+      const activeRow = watchlistState.find((w) => w.symbol === activeSymbol.symbol);
+      if (activeRow) {
+        activeRow.price = lastPrice;
+        renderWatchlistItem(activeRow, { flash: true });
+      }
+    }
+    ambientJitterOtherSymbols();
+
+    if (phase === "scanning") runScanSweepTick();
+    if (position) updatePositionVisuals();
+
+    advancePhase();
+
+    // A pending timeout can only reach this line by having fired, and
+    // stop() cancels the pending timeout itself — so there's no path
+    // where this needs to check whether it was stopped in between.
+    tickTimeoutId = window.setTimeout(runTick, 300 + Math.random() * 500);
   }
 
   function start() {
-    if (reduceMotion || phaseTimeoutId) return;
-    runPhase();
+    if (reduceMotion || tickTimeoutId) return;
+    tickTimeoutId = window.setTimeout(runTick, 300 + Math.random() * 500);
   }
 
   function stop() {
-    if (phaseTimeoutId) {
-      window.clearTimeout(phaseTimeoutId);
-      phaseTimeoutId = null;
+    if (tickTimeoutId) {
+      window.clearTimeout(tickTimeoutId);
     }
-    clearScanHighlights();
+    tickTimeoutId = null;
   }
+
+  // Initial static paint (also used as the permanent state under
+  // prefers-reduced-motion, which never calls start()).
+  seedPriceWindow(SYMBOLS[0]);
+  renderChartInstant();
+  renderPriceReadout(lastPrice);
+  enterPhase("monitor");
 
   if (!reduceMotion && "IntersectionObserver" in window) {
     const observer = new IntersectionObserver(
